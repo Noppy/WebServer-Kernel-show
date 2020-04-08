@@ -166,17 +166,95 @@ Resources:
         - IpProtocol: tcp
           FromPort:   80
           ToPort:     80
-          SourceSecurityGroupId: !Ref AlbSG
+          CidrIp: 0.0.0.0/0
         - IpProtocol: tcp
           FromPort:   443
           ToPort:     443
-          SourceSecurityGroupId: !Ref AlbSG
+          CidrIp: 0.0.0.0/0
         - IpProtocol: tcp
           FromPort:   22
           ToPort:     22
-          SourceSecurityGroupId: !Ref BastionSshSG
+          CidrIp: 0.0.0.0/0
       Tags:
         - Key   : Name
           Value : WebSystem-WebSG
     DependsOn:
       - Vpc
+  #--------------------------------------
+  # Define WebServer
+  #--------------------------------------
+  WebServerTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: !Sub LaunchConfForWebServer-${AWS::StackName}
+      LaunchTemplateData:
+        ImageId: !Ref AmiId
+        InstanceType: !Ref InstanceType
+        KeyName: !Ref KeyName
+        Monitoring:
+          Enabled: true
+        #SecurityGroupIds:
+        #  - !Ref WebSG
+        BlockDeviceMappings:
+          -
+            DeviceName: /dev/xvda
+            VirtualName: WebServer_RootVol
+            Ebs:
+              DeleteOnTermination: true
+              VolumeType: gp2
+              VolumeSize: 8
+              Encrypted: false
+          -
+            DeviceName: /dev/sdf
+            VirtualName: WebServer_DataVol
+            Ebs:
+              DeleteOnTermination: true
+              VolumeType: gp2
+              VolumeSize: 20
+              Encrypted: false
+        NetworkInterfaces:
+          -
+            DeviceIndex: 0
+            SubnetId: !Ref PublicSubnet1
+            Groups:
+              - !Ref WebSG
+            AssociatePublicIpAddress: true
+            DeleteOnTermination: true
+        UserData:
+          Fn::Base64:
+            Fn::Join:
+              - ""
+              - - !Sub |
+                  #!/bin/bash -xe
+                  yum update -y
+                  #Change Hostname
+                  hostnamectl set-hostname "WebServer"
+                  # Format and mount
+                  parted /dev/nvme1n1 mklabel gpt
+                  parted /dev/nvme1n1 mkpart primary xfs 0 100%
+                  mkfs.xfs -i maxpct=25 /dev/nvme1n1p1
+                  xfs_admin -U ce5c319b-77f2-44c6-8fee-aceccf106d93 /dev/nvme1n1p1
+                  mkdir /data
+                  echo 'UUID=ce5c319b-77f2-44c6-8fee-aceccf106d93     /data       xfs    defaults,noatime  1   1' >> /etc/fstab
+                  mount -a
+  WebServer1:
+    Type: AWS::EC2::Instance
+    Properties:
+      LaunchTemplate: 
+        LaunchTemplateId: !Ref WebServerTemplate
+        Version: !GetAtt WebServerTemplate.LatestVersionNumber
+      Tags:
+        -
+          Key: Nanme
+          Value: "WebServer#1"
+    DependsOn:
+      - WebServerTemplate
+  WebServer1Eip:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+  ElasticIPAssociate:
+    Type: AWS::EC2::EIPAssociation
+    Properties: 
+      AllocationId: !GetAtt WebServer1Eip.AllocationId
+      InstanceId: !Ref WebServer1

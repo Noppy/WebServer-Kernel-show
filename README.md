@@ -28,7 +28,7 @@ cd WebServer-Kernel-show.git
 KEYNAME="CHANGE_KEY_PAIR_NAME"  #環境に合わせてキーペア名を設定してください。  
 
 #最新のAmazon Linux2のAMI IDを取得します。
-AL2_AMIID=$(aws --profile ${PROFILE} --output text \
+AL2_AMIID=$(aws --profile ${PROFILE} --region ${REGION} --output text \
     ec2 describe-images \
         --owners amazon \
         --filters 'Name=name,Values=amzn2-ami-hvm-2.0.????????.?-x86_64-gp2' \
@@ -47,7 +47,7 @@ CFN_STACK_PARAMETERS='
   }
 ]'
 
-aws --profile ${PROFILE} cloudformation create-stack \
+aws --profile ${PROFILE} --region ${REGION} cloudformation create-stack \
     --stack-name KernelShowWeb \
     --template-body "file://./cfn/web_server.yaml" \
     --parameters "${CFN_STACK_PARAMETERS}" \
