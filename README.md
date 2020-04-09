@@ -53,3 +53,40 @@ aws --profile ${PROFILE} --region ${REGION} cloudformation create-stack \
     --parameters "${CFN_STACK_PARAMETERS}" \
     --capabilities CAPABILITY_IAM ;
 ```
+## (3)WebServerのデプロイ(Ansible利用)
+### (3)-(a) WebServerへのログイン
+```shell
+WebIp=$(aws --profile ${PROFILE} --region ${REGION} --output text \
+    cloudformation describe-stacks \
+        --stack-name KernelShowWeb \
+        --query 'Stacks[].Outputs[?OutputKey==`WebServer1PubIP`].[OutputValue]')
+
+ssh ec2-user@${WebIp}
+```
+### (3)-(b) Ansibleとwebserver用playbookのgit clone
+```shell
+sudo amazon-linux-extras install ansible2
+
+git clone https://github.com/Noppy/ansible-BuildWebServer.git
+cd ansible-BuildWebServer/
+```
+### (3)-(c) Create Inventory File
+```shell
+cat > inventory << EOL
+[webservers]
+127.0.0.1 ansible_connection=local
+EOL
+```
+### (3)-(d) Execute ansible play-book
+```shell
+#Nitro系の場合
+EbsDevName="/dev/nvme2"
+PartitionDevName="/dev/nvme2n1"
+#Xen系の場合
+EbsDevName="/dev/xvdb"
+PartitionDevName="/dev/xvdb1"
+
+#セットアップ
+ansible-playbook site.yml --extra-vars "EbsDevName=${EbsDevName} PartitionDevName=${PartitionDevName}" -i inventory
+```
+
