@@ -25,8 +25,6 @@ cd WebServer-Kernel-show.git
 
 ### (2)-(b) CloudFormationによるデプロイ
 ```shell
-KEYNAME="CHANGE_KEY_PAIR_NAME"  #環境に合わせてキーペア名を設定してください。  
-
 #最新のAmazon Linux2のAMI IDを取得します。
 AL2_AMIID=$(aws --profile ${PROFILE} --region ${REGION} --output text \
     ec2 describe-images \
@@ -48,45 +46,6 @@ aws --profile ${PROFILE} --region ${REGION} cloudformation create-stack \
     --template-body "file://./cfn/web_server.yaml" \
     --parameters "${CFN_STACK_PARAMETERS}" \
     --capabilities CAPABILITY_IAM ;
-```
-## (3) srpm２htmlツールのデプロイ(Ansible利用)
-このセッションは、従来のApache + srpm2htmlツールの手順のままなので、将来的に見直しが必要です。
-### (3)-(a) WebServerへのログイン
-SSMを利用しインスタンスにログインし、ec2-userにスイッチします。
-```shell
-sudo -i -u ec2-user
-```
-
-### (3)-(b) Ansibleとwebserver用playbookのgit clone
-```shell
-sudo amazon-linux-extras install ansible2
-
-git clone https://github.com/Noppy/ansible-BuildWebServer.git
-cd ansible-BuildWebServer/
-```
-### (3)-(c) Create Inventory File
-```shell
-cat > inventory << EOL
-[webservers]
-127.0.0.1 ansible_connection=local
-EOL
-```
-### (3)-(d) Execute ansible play-book
-```shell
-#Nitro系の場合
-EbsDevName="/dev/nvme2"
-PartitionDevName="/dev/nvme2n1"
-#Xen系の場合
-EbsDevName="/dev/xvdb"
-PartitionDevName="/dev/xvdb1"
-
-#セットアップ
-ansible-playbook site.yml --extra-vars "EbsDevName=${EbsDevName} PartitionDevName=${PartitionDevName}" -i inventory
-```
-### (3)-(e) srpm2htmlツールのパス追加
-```shell
-echo 'PATH="${PATH}:/data/bin"' >> ~/.bashrc
-source ~/.bashrc
 ```
 
 ## srpm2htmlの使い方

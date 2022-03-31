@@ -289,18 +289,31 @@ Resources:
               - ""
               - - !Sub |
                   #!/bin/bash -xe
-                  yum update -y
-                  yum -y install git
                   #Change Hostname
                   hostnamectl set-hostname "CodeStaticAnalysis"
+
+                  #Update packages and install git
+                  yum update -y
+                  yum -y install git
+
                   # Format and mount
                   parted /dev/nvme1n1 mklabel gpt
                   parted /dev/nvme1n1 mkpart primary xfs 0 100%
-                  mkfs.xfs -i maxpct=25 /dev/nvme1n1p1
+                  mkfs.xfs -f -i maxpct=25 /dev/nvme1n1p1
                   xfs_admin -U ce5c319b-77f2-44c6-8fee-aceccf106d93 /dev/nvme1n1p1
                   mkdir /data
                   echo 'UUID=ce5c319b-77f2-44c6-8fee-aceccf106d93     /data       xfs    defaults,noatime  1   1' >> /etc/fstab
                   mount -a
+
+                  #Setup srpm2html - preparation
+                  sudo yum -y install git
+                  sudo amazon-linux-extras install -y ansible2 
+
+                  #Setup srpm2html - clone git repository
+                  cd /root
+                  git clone https://github.com/Noppy/srpm2html.git
+                  cd srpm2html/ansible
+                  ansible-playbook srpm2html.yml -i inventory
   CodeStaticAnalysis:
     Type: AWS::EC2::Instance
     Properties:
