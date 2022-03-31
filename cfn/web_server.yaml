@@ -5,14 +5,10 @@ Parameters:
   InstanceType:
     Description: (optional) Instance type
     Type: String
-    Default: m5d.xlarge
+    Default: m6g.16xlarge
   AmiId:
     Description: (optional) AMI ID
     Type: String
-    Default: ami-0d7ed3ddb85b521a6
-  KeyName:
-    Description: (required) Name of an existing EC2 key pair
-    Type: "AWS::EC2::KeyPair::KeyName"
 Metadata: 
   AWS::CloudFormation::Interface: 
     ParameterGroups: 
@@ -21,8 +17,7 @@ Metadata:
           default: Environment
         Parameters: 
           - InstanceType
-          - AmiId
-          - KeyName
+          - AmiId          
 Resources:
   #--------------------------------------
   # IAM
@@ -55,6 +50,54 @@ Resources:
                   - "logs:DescribeLogStreams"
                   - "logs:PutLogEvents"
                 Resource: "*"
+  EC2Role:
+    Type: AWS::IAM::Role
+    Properties: 
+      Path: "/"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Policies:
+        - 
+          PolicyName: AllowS3ObjectOperations
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - 
+                Effect: Allow
+                Action:
+                  - "s3:PutObject"
+                  - "s3:GetObject"
+                  - "s3:GetObjectVersion"
+                  - "s3:DeleteObject"
+                  - "s3:DeleteObjectVersion"
+                  - "s3:ListAllMyBuckets"
+                  - "s3:GetBucketLocation"
+                Resource:
+                  - !Sub "arn:aws:s3:::${BucketForCF}"
+                  - !Sub "arn:aws:s3:::${BucketForCF}/*"
+              - 
+                Effect: Allow
+                Action:
+                  - "s3:ListAllMyBuckets"
+                  - "s3:ListBucket"
+                  - "s3:ListMultipartUploadParts"
+                  - "s3:ListBucketVersions"
+                Resource: "*"
+  EC2RoleProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: "/"
+      Roles:
+        - !Ref EC2Role
   #--------------------------------------
   # VPC - Network
   #--------------------------------------
@@ -155,42 +198,62 @@ Resources:
       ResourceType: VPC
       TrafficType: ALL
   #--------------------------------------
-  # Define Security Group
+  # CloudFront and S3
   #--------------------------------------
-  WebSG:
-    Type: AWS::EC2::SecurityGroup
+  BucketForCF:
+    Type: AWS::S3::Bucket
     Properties:
-      VpcId: !Ref Vpc
-      GroupDescription: Allow access from HTTP and HTTPS traffic for ALB
-      SecurityGroupIngress:
-        - IpProtocol: tcp
-          FromPort:   80
-          ToPort:     80
-          CidrIp: 0.0.0.0/0
-        - IpProtocol: tcp
-          FromPort:   443
-          ToPort:     443
-          CidrIp: 0.0.0.0/0
-        - IpProtocol: tcp
-          FromPort:   22
-          ToPort:     22
-          CidrIp: 0.0.0.0/0
-      Tags:
-        - Key   : Name
-          Value : WebSystem-WebSG
-    DependsOn:
-      - Vpc
+      AccessControl: Private
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: True
+        BlockPublicPolicy: True
+        IgnorePublicAcls: True
+        RestrictPublicBuckets: True
+  BucketForCFBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref BucketForCF
+      PolicyDocument:
+        Statement:
+          - Action: s3:GetObject
+            Effect: Allow
+            Resource: !Sub "arn:aws:s3:::${BucketForCF}/*"
+            Principal:
+              AWS: !Sub "arn:aws:iam::cloudfront:user/CloudFront Origin Access Identity ${CfOai}"
+  CfDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Origins:
+        - Id: S3Origin
+          DomainName: !GetAtt BucketForCF.RegionalDomainName
+          S3OriginConfig:
+            OriginAccessIdentity: !Sub "origin-access-identity/cloudfront/${CfOai}"
+        Enabled: true
+        DefaultRootObject: index.html
+        Comment: !Sub "${AWS::StackName} distribution"
+        DefaultCacheBehavior:
+          TargetOriginId: S3Origin
+          ForwardedValues:
+            QueryString: false
+          ViewerProtocolPolicy: redirect-to-https
+  CfOai:
+    Type: AWS::CloudFront::CloudFrontOriginAccessIdentity
+    Properties:
+      CloudFrontOriginAccessIdentityConfig:
+        Comment: !Ref AWS::StackName
   #--------------------------------------
-  # Define WebServer
+  # Instance for code static analysis
   #--------------------------------------
-  WebServerTemplate:
+  CodeStaticAnalysisInstanceTemplate:
     Type: AWS::EC2::LaunchTemplate
     Properties:
-      LaunchTemplateName: !Sub LaunchConfForWebServer-${AWS::StackName}
+      LaunchTemplateName: !Sub CodeStaticAnalysis-${AWS::StackName}
       LaunchTemplateData:
         ImageId: !Ref AmiId
         InstanceType: !Ref InstanceType
-        KeyName: !Ref KeyName
+        IamInstanceProfile:
+          Arn: !GetAtt EC2RoleProfile.Arn
         Monitoring:
           Enabled: true
         #SecurityGroupIds:
@@ -198,26 +261,26 @@ Resources:
         BlockDeviceMappings:
           -
             DeviceName: /dev/xvda
-            VirtualName: WebServer_RootVol
+            VirtualName: RootVol
             Ebs:
               DeleteOnTermination: true
-              VolumeType: gp2
+              VolumeType: gp3
               VolumeSize: 8
               Encrypted: false
           -
             DeviceName: /dev/sdf
-            VirtualName: WebServer_DataVol
+            VirtualName: DataVol
             Ebs:
               DeleteOnTermination: true
-              VolumeType: gp2
-              VolumeSize: 20
+              VolumeType: gp3
+              VolumeSize: 30
               Encrypted: false
         NetworkInterfaces:
           -
             DeviceIndex: 0
             SubnetId: !Ref PublicSubnet1
             Groups:
-              - !Ref WebSG
+              - !GetAtt Vpc.DefaultSecurityGroup
             AssociatePublicIpAddress: true
             DeleteOnTermination: true
         UserData:
@@ -229,7 +292,7 @@ Resources:
                   yum update -y
                   yum -y install git
                   #Change Hostname
-                  hostnamectl set-hostname "WebServer"
+                  hostnamectl set-hostname "CodeStaticAnalysis"
                   # Format and mount
                   parted /dev/nvme1n1 mklabel gpt
                   parted /dev/nvme1n1 mkpart primary xfs 0 100%
@@ -238,27 +301,13 @@ Resources:
                   mkdir /data
                   echo 'UUID=ce5c319b-77f2-44c6-8fee-aceccf106d93     /data       xfs    defaults,noatime  1   1' >> /etc/fstab
                   mount -a
-  WebServer1:
+  CodeStaticAnalysis:
     Type: AWS::EC2::Instance
     Properties:
       LaunchTemplate: 
-        LaunchTemplateId: !Ref WebServerTemplate
-        Version: !GetAtt WebServerTemplate.LatestVersionNumber
+        LaunchTemplateId: !Ref CodeStaticAnalysisInstanceTemplate
+        Version: !GetAtt CodeStaticAnalysisInstanceTemplate.LatestVersionNumber
       Tags:
         -
           Key: Nanme
-          Value: "WebServer#1"
-    DependsOn:
-      - WebServerTemplate
-  WebServer1Eip:
-    Type: AWS::EC2::EIP
-    Properties:
-      Domain: vpc
-  ElasticIPAssociate:
-    Type: AWS::EC2::EIPAssociation
-    Properties: 
-      AllocationId: !GetAtt WebServer1Eip.AllocationId
-      InstanceId: !Ref WebServer1
-Outputs:
-  WebServer1PubIP:
-    Value: !GetAtt WebServer1.PublicIp
+          Value: "CodeStaticAnalysisr#1"

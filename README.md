@@ -31,7 +31,7 @@ KEYNAME="CHANGE_KEY_PAIR_NAME"  #環境に合わせてキーペア名を設定�
 AL2_AMIID=$(aws --profile ${PROFILE} --region ${REGION} --output text \
     ec2 describe-images \
         --owners amazon \
-        --filters 'Name=name,Values=amzn2-ami-hvm-2.0.????????.?-x86_64-gp2' \
+        --filters 'Name=name,Values=amzn2-ami-kernel-5.10-hvm-2.?.????????.?-arm64-gp2' \
                   'Name=state,Values=available' \
         --query 'reverse(sort_by(Images, &CreationDate))[:1].ImageId' ) ;
 
@@ -40,10 +40,6 @@ CFN_STACK_PARAMETERS='
   {
     "ParameterKey": "AmiId",
     "ParameterValue": "'"${AL2_AMIID}"'"
-  },
-  {
-    "ParameterKey": "KeyName",
-    "ParameterValue": "'"${KEYNAME}"'"
   }
 ]'
 
@@ -53,16 +49,14 @@ aws --profile ${PROFILE} --region ${REGION} cloudformation create-stack \
     --parameters "${CFN_STACK_PARAMETERS}" \
     --capabilities CAPABILITY_IAM ;
 ```
-## (3)WebServerのデプロイ(Ansible利用)
+## (3) srpm２htmlツールのデプロイ(Ansible利用)
+このセッションは、従来のApache + srpm2htmlツールの手順のままなので、将来的に見直しが必要です。
 ### (3)-(a) WebServerへのログイン
+SSMを利用しインスタンスにログインし、ec2-userにスイッチします。
 ```shell
-WebIp=$(aws --profile ${PROFILE} --region ${REGION} --output text \
-    cloudformation describe-stacks \
-        --stack-name KernelShowWeb \
-        --query 'Stacks[].Outputs[?OutputKey==`WebServer1PubIP`].[OutputValue]')
-
-ssh ec2-user@${WebIp}
+sudo -i -u ec2-user
 ```
+
 ### (3)-(b) Ansibleとwebserver用playbookのgit clone
 ```shell
 sudo amazon-linux-extras install ansible2
@@ -89,4 +83,14 @@ PartitionDevName="/dev/xvdb1"
 #セットアップ
 ansible-playbook site.yml --extra-vars "EbsDevName=${EbsDevName} PartitionDevName=${PartitionDevName}" -i inventory
 ```
+### (3)-(e) srpm2htmlツールのパス追加
+```shell
+echo 'PATH="${PATH}:/data/bin"' >> ~/.bashrc
+source ~/.bashrc
+```
 
+## srpm2htmlの使い方
+こちらを参照
+- https://nopipi.hatenablog.com/entry/2017/06/11/161709
+
+## srpm2htmlで作成したhtmlをCF公開用のS3にアップする
