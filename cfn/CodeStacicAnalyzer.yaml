@@ -92,6 +92,16 @@ Resources:
                   - "s3:ListMultipartUploadParts"
                   - "s3:ListBucketVersions"
                 Resource: "*"
+              -
+                Effect: Allow
+                Action:
+                  - "s3:ListAllMyBuckets"
+                  - "s3:ListBucket"
+                  - "s3:ListMultipartUploadParts"
+                  - "s3:ListBucketVersions"
+                Resource: "*"
+
+
   EC2RoleProfile:
     Type: AWS::IAM::InstanceProfile
     Properties:
@@ -324,3 +334,7 @@ Resources:
         -
           Key: Nanme
           Value: "CodeStaticAnalysisr#1"
+Outputs:
+  S3bucket:
+    Value: !Ref BucketForCF
+  

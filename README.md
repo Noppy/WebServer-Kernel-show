@@ -42,8 +42,8 @@ CFN_STACK_PARAMETERS='
 ]'
 
 aws --profile ${PROFILE} --region ${REGION} cloudformation create-stack \
-    --stack-name KernelShowWeb \
-    --template-body "file://./cfn/web_server.yaml" \
+    --stack-name CodeStacicAnalyzer \
+    --template-body "file://.cfn/CodeStacicAnalyzer.yaml" \
     --parameters "${CFN_STACK_PARAMETERS}" \
     --capabilities CAPABILITY_IAM ;
 ```
